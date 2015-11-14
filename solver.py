@@ -8,7 +8,7 @@ from operator import add, attrgetter, itemgetter
 
 from multiprocessing import Pool
 
-from util import (Point, Route, distance, min_index, merge_routes, insert_point,
+from util import (Point, Route, distance, merge_routes,
                   trivial_solution, ncr, npr, solution_cost)
 
 
@@ -174,85 +174,3 @@ def solve(p, max_dist=None):
             len(r) - len(nr), len(r), len(nr), solution_cost(r), solution_cost(nr)))
         r = nr
     return r
-
-
-def opt(p, s):
-    """
-    Apply `redistribute` until it doesn't do anything.
-    """
-    c0 = solution_cost(s)
-    for i in count(1):
-        print('Applying redistribute, #{}'.format(i))
-        s, sr = redistribute(p, s)
-        print('Success rate: {!r}'.format(sr))
-        if sr == 0.0:
-            break
-    c = solution_cost(s)
-    print('Saved {!r}'.format(c0-c))
-    return s
-
-
-def redistribute(problem, s):
-    """
-    A cheap algorithm that tries to break up low-volume routes and
-    redistribute their points among the other ones.
-    """
-    l = sorted(s, key=attrgetter('volume'))
-    pop_pos = 0
-    i = 0
-    cf = 0
-    tf, ts = 0, 0
-    while len(l) > pop_pos:
-        i += 1
-        l_next = l[:]
-        t = l_next.pop(pop_pos)
-        points = t._points[1:-1]
-        rcost = 0
-        cts = t.cost
-        for px in permutations(points):
-            failed = False
-            rcost = 0
-            for p in px: #sorted(points, key=attrgetter('volume'), reverse=False):
-                max_cost = None
-                change = None
-                #rs = distance(p, points[i-1]) + distance(p, points[i+1]) -\
-                #              distance(points[i-1], points[i+1])
-                for ri, r in enumerate(reversed(l_next)):
-                    if r is t:
-                        continue
-                    if p.volume + r.volume > problem.capacity:
-                        continue
-                    n = insert_point(r, p, max_cost=max_cost)
-                    if n is None:
-                        continue
-                    max_cost = n.cost
-                    change = (n.cost - r.cost, len(l_next) - ri - 1, n)
-                if change is None:
-                    failed = True
-                    break
-                cost, ind, nr = change
-                rcost += cost
-                l_next[ind] = nr
-            if not failed:
-                break
-        if failed:
-            #print("Redistribution cycle {!r} failed.".format(i))
-            cf += 1
-            tf += 1
-            pop_pos += 1
-        elif cts <= rcost:
-            #print("Redistribution cycle {!r} couldn't find a saving: delete {!r}, cost {!r}, saved {!r}".format(
-            #    i, cts, rcost, cts - rcost))
-            cf += 1
-            tf += 1
-            pop_pos += 1
-        else:
-            print('Redistribution cycle {!r}: delete {!r}, cost {!r}, saved {!r}'.format(
-                i, cts, rcost, cts - rcost))
-            cf = 0
-            ts += 1
-            l = l_next
-        if cf > 50 and ts < tf:
-            tf += len(l) - pop_pos
-            break
-    return set(l), ts/tf

@@ -1,6 +1,6 @@
 from problem import Problem
 from solution import Solution
-from solver import solve, opt
+from solver import solve
 from util import distance
 
 import random
@@ -58,10 +58,6 @@ def main():
         pd.append(min(d))
 
     s = solve(p, max_dist=median(pd))
-    print(' - ')
-    solution_info(p, s)
-    print(' - ')
-    s = opt(p, s)
     print(' - ')
     solution_info(p, s)
     print(' - ')

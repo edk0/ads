@@ -5,18 +5,6 @@ from itertools import starmap
 from operator import attrgetter
 
 
-def min_index(l):
-    """
-    Return the (index, value) of the smallest element of a list..
-    """
-    ita = iter(l)
-    i, m = 0, next(ita)
-    for k, v in enumerate(ita):
-        if v < m:
-            i, m = k, v
-    return i, m
-
-
 def distance(p1, p2, cutoff=float('inf')):
     """
     The distance between p1 and p2. If cutoff is supplied and is smaller than
@@ -69,24 +57,6 @@ def merge_routes(a, b, cutoff_d2=float('inf')):
                            a._points[:-1] + b._points[1:],
                            _costs=(c_a + c_b + c_merge, a._pre_cost, b._post_cost)))
     return r, saving
-
-
-def insert_point(r, p, *, max_cost=None):
-    """
-    Insert a point into a route where it would have the smallest effect
-    on the cost.
-
-    If max_cost is given, return None if the new cost > max_cost.
-    """
-    d = zip(r._points, r._points[1:])
-    costs = starmap(lambda a, b: distance(p, a) + distance(p, b) - distance(a, b), d)
-    i, cost = min_index(costs)
-    if max_cost is not None and cost > max_cost:
-        return
-    ps = list(r._points)
-    ps[i+1:i+1] = [p]
-    return Route(r.volume + p.volume,
-                 ps) # XXX add proper cost calc
 
 
 class Point:
