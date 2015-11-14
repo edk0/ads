@@ -8,10 +8,6 @@ import logging
 import sys
 
 
-def mean(l):
-    return sum(l) / len(l)
-
-
 def median(l, t=0.5):
     l = sorted(l)
     mp = int((len(l) - 1) * t)
@@ -44,20 +40,32 @@ def solution_info(p, s):
     print('Total cost: {}'.format(sum(r.cost for r in s)))
 
 
-def main():
-    enable_debug()
-    with open(sys.argv[1]) as f:
-        p = Problem.load(f)
+def find_cutoff(p):
+    print('Analysing data')
     pd = []
     for i in range(100):
         p1 = random.choice(p.customers)
         d = []
-        for j in range(100):
+        for j in range(len(p.customers) // 10 + 1):
             p2 = random.choice(p.customers)
             d.append(distance(p1, p2))
         pd.append(min(d))
+    return median(pd)
 
-    s = solve(p, max_dist=median(pd))
+
+def main():
+    enable_debug()
+
+    print('Loading {}'.format(sys.argv[1]))
+    with open(sys.argv[1]) as f:
+        p = Problem.load(f)
+
+    # A probabilistic optimization: examine some random customers. For
+    # each one, find the closest customer from another random sampling.
+    # The median of these distances will be used as the distance cutoff for
+    # the solver.
+
+    s = solve(p, max_dist=find_cutoff(p))
     print(' - ')
     solution_info(p, s)
     print(' - ')
