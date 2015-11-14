@@ -8,48 +8,8 @@ from operator import add, attrgetter, itemgetter
 
 from multiprocessing import Pool
 
-from util import Point, Route, distance, min_index
-
-
-def initial_routes(p):
-    r = []
-    for customer in p.customers:
-        r.append(Route(customer.volume, [p.depot, customer, p.depot]))
-    return r
-
-
-def merge_routes(a, b, max_dist=None):
-    """
-    Return a Route that visits all the points on a and b.
-    """
-    assert a._points[0] == a._points[-1] == b._points[0] == b._points[-1]
-    c_a = a.cost - a._post_cost
-    c_b = b.cost - b._pre_cost
-    c_merge = distance(a._points[-2], b._points[1], max_dist)
-    if c_merge is None:
-        return
-    r = Route(a.volume + b.volume,
-                 a._points[:-1] + b._points[1:],
-                 _costs=(c_a + c_b + c_merge, a._pre_cost, b._post_cost))
-    return r
-
-
-def insert_point(r, p, *, max_cost=None):
-    """
-    Insert a point into a route where it would have the smallest effect
-    on the cost.
-
-    If max_cost is given, return None if the new cost > max_cost.
-    """
-    d = zip(r._points, r._points[1:])
-    costs = starmap(lambda a, b: distance(p, a) + distance(p, b) - distance(a, b), d)
-    i, cost = min_index(costs)
-    if max_cost is not None and cost > max_cost:
-        return
-    ps = list(r._points)
-    ps[i+1:i+1] = [p]
-    return Route(r.volume + p.volume,
-                 ps) # XXX add proper cost calc
+from util import (Point, Route, distance, min_index, merge_routes, insert_point,
+                  trivial_solution, ncr, npr, solution_cost)
 
 
 def available_merges(p, l, mirror=False):
@@ -69,7 +29,7 @@ def available_merges(p, l, mirror=False):
     return sorted(c, key=lambda t: t[0].cost + t[1].cost - t[2].cost, reverse=True)
 
 
-def available_with_pruning(p, l, cr=False, max_dist=None, progress_callback=None):
+def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callback=None):
     """
     Return the merges from l that are both possible and appear to be among the
     better merges for one of their inputs.
@@ -91,32 +51,40 @@ def available_with_pruning(p, l, cr=False, max_dist=None, progress_callback=None
     """
     HIGH, LOW = 20, 10  # Tuned for overall performance.
     n = 0
+    actual = 0
     if cr:
         it = combinations(l, 2)
     else:
         it = permutations(l, 2)
     best = defaultdict(list)
     key = itemgetter(0)
+    if max_dist is None:
+        max_dist = float('inf')
+    max_dist = max_dist ** 2
     for merge in it:
         a, b = merge
+        if n % 100000 == 0:
+            progress_callback(n, actual)
         n += 1
-        if n % 10000 == 0:
-            progress_callback(n)
-        if a.volume + b.volume < p.capacity:
-            m = merge_routes(a, b, max_dist)
-            if m is None:
-                continue
-            saving = a.cost + b.cost - m.cost
-            if a not in best or best[a][0][0] < saving:
-                best[a].append((saving, a, b, m))
-                if len(best[a]) > HIGH:
-                    best[a].sort(key=key, reverse=True)
-                    del best[a][LOW:]
-            if b not in best or best[b][0][0] < saving:
-                best[b].append((saving, a, b, m))
-                if len(best[b]) > HIGH:
-                    best[b].sort(key=key, reverse=True)
-                    del best[b][LOW:]
+        #  Don't make routes that are over capacity
+        if a.volume + b.volume > p.capacity:
+            actual += 1
+            continue
+        mr = merge_routes(a, b, cutoff_d2=max_dist)
+        if mr is None:
+            continue
+        m, saving = mr
+        if a not in best or best[a][0][0] < saving:
+            best[a].append((saving, a, b, m.value))
+            if len(best[a]) > HIGH:
+                best[a].sort(key=key, reverse=True)
+                del best[a][LOW:]
+        if b not in best or best[b][0][0] < saving:
+            best[b].append((saving, a, b, m.value))
+            if len(best[b]) > HIGH:
+                best[b].sort(key=key, reverse=True)
+                del best[b][LOW:]
+        actual += 1
     c = set()
     for v in best.values():
         c.update(v)
@@ -151,34 +119,13 @@ def apply_merges(r, l):
     return r
 
 
-def npr(n, k):
-    """
-    return n_P_k
-    """
-    return math.factorial(n) // math.factorial(n-k)
-
-
-def ncr(n, k):
-    """
-    return n_C_k
-    """
-    return math.factorial(n) // (math.factorial(k) * math.factorial(n - k))
-
-
-def solution_cost(s):
-    """
-    Return the sum of the costs of a set of routes.
-    """
-    return sum(map(attrgetter('cost'), s))
-
-
 def solve(p, max_dist=None):
     """
     Find a solution to the given problem using the parallel C&W savings alg.
     """
     D2_PRUNE = 2000  # If we have less than this number of routes to combine,
                      # don't use the d^2 cutoff
-    r = set(initial_routes(p))  # Start with trivial solution
+    r = trivial_solution(p)
     first = True
     while True:
         # Figure out how many merges we're going to check. Mostly for the
@@ -198,26 +145,26 @@ def solve(p, max_dist=None):
             dc = None
 
         # Print a vaguely acceptable-looking percentage
-        def progress(n):
+        def progress(n, actual):
             prog = n * 100 / t
-            print('\r{:.2f}%'.format(prog), end='')
+            print('\033[2K\r{:6.2f}% '.format(prog), end='')
+            if dc is not None and n > 0:
+                skip = (n - actual) * 100 / n
+                print(' (skip {:4.1f}%)'.format(skip), end='')
             sys.stdout.flush()
 
         m = available_with_pruning(p, r, cr=first, max_dist=dc, progress_callback=progress)
-        print('\r', end='')
+        print('\033[2K\r', end='')
 
         first = False
 
         if not m:
-            # This final attempt adds a few seconds and usually doesn't find
-            # anything, but the wasted time is fairly insignificant compared
-            # with the time taken to get this far
             if dc is not None:
-                print('Run out of merges, turning off pruning.')
+                print('Run out of merges; disabling d^2 cutoff')
                 max_dist = None
                 continue
             else:
-                print('No more merges, C&W solution complete.')
+                print('No more merges.')
                 break
 
         print('Applying merges...')
@@ -305,7 +252,7 @@ def redistribute(problem, s):
             cf = 0
             ts += 1
             l = l_next
-        if cf > 10 and ts < tf:
+        if cf > 50 and ts < tf:
             tf += len(l) - pop_pos
             break
     return set(l), ts/tf
