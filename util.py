@@ -27,22 +27,6 @@ def trivial_solution(p):
     return s
 
 
-nothing = object()
-class Lazy:
-    __slots__ = ('_f', '_v')
-
-    def __init__(self, f):
-        self._f = f
-        self._v = nothing
-
-    @property
-    def value(self):
-        v = self._v
-        if v is nothing:
-            v = self._v = self._f()
-        return v
-
-
 def merge_routes(a, b, cutoff_d2=float('inf')):
     """
     Return a Route that visits all the points on a and b.
@@ -53,9 +37,9 @@ def merge_routes(a, b, cutoff_d2=float('inf')):
     c_a = a.cost - a._post_cost
     c_b = b.cost - b._pre_cost
     saving = c_a + c_b - c_merge
-    r = Lazy(lambda: Route(a.volume + b.volume,
-                           a._points[:-1] + b._points[1:],
-                           _costs=(c_a + c_b + c_merge, a._pre_cost, b._post_cost)))
+    r = Route(a.volume + b.volume,
+              a._points[:-1] + b._points[1:],
+              _costs=(c_a + c_b + c_merge, a._pre_cost, b._post_cost))
     return r, saving
 
 

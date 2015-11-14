@@ -52,6 +52,11 @@ def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callb
     HIGH, LOW = 20, 10  # Tuned for overall performance.
     n = 0
     actual = 0
+    sc_radius = 0
+    sc_d2 = 0
+    if cr:
+        it = combinations(l, 2)
+    else:
     if cr:
         it = combinations(l, 2)
     else:
@@ -60,37 +65,57 @@ def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callb
     key = itemgetter(0)
     if max_dist is None:
         max_dist = float('inf')
-    max_dist = max_dist ** 2
-    for merge in it:
-        a, b = merge
-        if n % 100000 == 0:
-            progress_callback(n, actual)
-        n += 1
-        #  Don't make routes that are over capacity
-        if a.volume + b.volume > p.capacity:
-            actual += 1
-            continue
-        mr = merge_routes(a, b, cutoff_d2=max_dist)
-        if mr is None:
-            continue
+    min_dist = -max_dist
+    max_d2 = max_dist ** 2
+
+    def insert_merge(mr):
+        nonlocal actual
         m, saving = mr
         if a not in best or best[a][0][0] < saving:
-            best[a].append((saving, a, b, m.value))
+            best[a].append((saving, a, b, m))
             if len(best[a]) > HIGH:
                 best[a].sort(key=key, reverse=True)
                 del best[a][LOW:]
         if b not in best or best[b][0][0] < saving:
-            best[b].append((saving, a, b, m.value))
+            best[b].append((saving, a, b, m))
             if len(best[b]) > HIGH:
                 best[b].sort(key=key, reverse=True)
                 del best[b][LOW:]
         actual += 1
+
+    def radius_check(a, b):
+        nonlocal sc_radius
+        radius = a._post_cost - b._pre_cost
+        if radius > max_dist or radius < min_dist:
+            sc_radius += 1
+            return False
+        return True
+
+    last = None
+
+    for a, b in it:
+        if a is not last:
+            n += 1
+            last = a
+            if n & 128 == 0:
+                progress_callback(n)
+        #  Fast distance exit
+        if not radius_check(a, b):
+            continue
+        #  Don't make routes that are over capacity
+        if a.volume + b.volume > p.capacity:
+            actual += 1
+            continue
+        mr = merge_routes(a, b, cutoff_d2=max_d2)
+        if mr is None:
+            sc_d2 += 1
+            continue
+        insert_merge(mr)
+
     c = set()
     for v in best.values():
         c.update(v)
-    if len(c) == 0:
-        return ()
-    return map(itemgetter(slice(1, None)), sorted(c, key=key, reverse=True))
+    return len(c), map(itemgetter(slice(1, None)), sorted(c, key=key, reverse=True)), (sc_radius, sc_d2)
 
 
 def filter_merges(l):
@@ -123,54 +148,53 @@ def solve(p, max_dist=None):
     """
     Find a solution to the given problem using the parallel C&W savings alg.
     """
-    D2_PRUNE = 2000  # If we have less than this number of routes to combine,
-                     # don't use the d^2 cutoff
     r = trivial_solution(p)
+
+    del p.customers  # Hacky, but should save some memory.
+
     first = True
+    num = 0
+    increments = 0
     while True:
-        # Figure out how many merges we're going to check. Mostly for the
-        # benefit of humans, but we also use this to decide whether to use
-        # the d^2 cutoff
-        t = comb = npr(len(r), 2)
-        print('Finding available merges ({} possible)...'.format(comb))
-        if first:
-            t = ncr(len(r), 2)
-            print('2-orderings are equivalent. Skipping {} merges'.format(comb-t, 2))
+        num += 1
+        print('Cycle {}: finding available merges...'.format(num))
 
         # Set up d^2 cutoff
-        if max_dist is not None and t >= npr(D2_PRUNE, 2):
-            print('Using d^2 cutoff for this pass. Threshold: {}'.format(max_dist))
+        if max_dist is not None:
+            print('Using distance cutoff for this pass. Threshold: {}'.format(max_dist))
             dc = max_dist
         else:
             dc = None
 
         # Print a vaguely acceptable-looking percentage
-        def progress(n, actual):
-            prog = n * 100 / t
+        def progress(n):
+            prog = n * 100 / len(r)
             print('\033[2K\r{:6.2f}% '.format(prog), end='')
-            if dc is not None and n > 0:
-                skip = (n - actual) * 100 / n
-                print(' (skip {:4.1f}%)'.format(skip), end='')
+            #if dc is not None and n > 0:
+            #    skip = (n - actual) * 100 / n
+            #    print(' (skip {:4.1f}%)'.format(skip), end='')
             sys.stdout.flush()
 
-        m = available_with_pruning(p, r, cr=first, max_dist=dc, progress_callback=progress)
+        n, m, sc = available_with_pruning(p, r, cr=first, max_dist=dc, progress_callback=progress)
         print('\033[2K\r', end='')
 
-        first = False
+        if any(sc):
+            print('shortcuts taken: radius: {}, d^2: {}'.format(*sc))
 
-        if not m:
-            if dc is not None:
-                print('Run out of merges; disabling d^2 cutoff')
-                max_dist = None
-                continue
-            else:
-                print('No more merges.')
-                break
+        first = False
 
         print('Applying merges...')
         f = filter_merges(m)
         nr = apply_merges(r, f)
-        print('Merged {} routes: {} -> {} (cost {} -> {})'.format(
-            len(r) - len(nr), len(r), len(nr), solution_cost(r), solution_cost(nr)))
+        print('Merged {}/{} routes: {} -> {} (cost {} -> {})'.format(
+            len(r) - len(nr), n, len(r), len(nr), solution_cost(r), solution_cost(nr)))
+
+        if (len(r) - len(nr) < 5) or increments > 0:
+            if dc is not None and increments < 6:
+                max_dist *= math.sqrt(2)
+                increments += 1
+            else:
+                break
+
         r = nr
     return r
