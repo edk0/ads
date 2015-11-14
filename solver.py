@@ -12,6 +12,9 @@ from util import (Point, Route, distance, merge_routes,
                   trivial_solution, ncr, npr, solution_cost)
 
 
+from grid import MergeGrid
+
+
 def available_merges(p, l, mirror=False):
     """
     Return the acceptable merges, i.e. combinations of routes taken from l
@@ -54,13 +57,13 @@ def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callb
     actual = 0
     sc_radius = 0
     sc_d2 = 0
-    if cr:
-        it = combinations(l, 2)
+    if max_dist is not None:
+        it = MergeGrid(None, l, cr, max_dist)
     else:
-    if cr:
-        it = combinations(l, 2)
-    else:
-        it = permutations(l, 2)
+        if cr:
+            it = combinations(l, 2)
+        else:
+            it = permutations(l, 2)
     best = defaultdict(list)
     key = itemgetter(0)
     if max_dist is None:
