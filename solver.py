@@ -115,6 +115,10 @@ def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callb
             continue
         insert_merge(mr)
 
+    del a
+    del b
+    del it
+
     c = set()
     for v in best.values():
         c.update(v)
@@ -138,7 +142,6 @@ def apply_merges(r, l):
     Take a set of routes and a list of (route, route, merged_route), and
     return a new set of routes with the merges applied.
     """
-    r = set(r)
     for a, b, m in l:
         assert a in r and b in r
         r.remove(a)
@@ -188,16 +191,22 @@ def solve(p, max_dist=None):
 
         print('Applying merges...')
         f = filter_merges(m)
-        nr = apply_merges(r, f)
-        print('Merged {}/{} routes: {} -> {} (cost {} -> {})'.format(
-            len(r) - len(nr), n, len(r), len(nr), solution_cost(r), solution_cost(nr)))
+        del m
 
-        if (len(r) - len(nr) < 5) or increments > 0:
+        pl = len(r)
+        pcost = solution_cost(r)
+
+        apply_merges(r, f)
+        del f
+
+        print('Merged {}/{} routes: {} -> {} (cost {} -> {})'.format(
+            pl - len(r), n, pl, len(r), pcost, solution_cost(r)))
+
+        if (pl - len(r) < 5) or increments > 0:
             if dc is not None and increments < 6:
                 max_dist *= math.sqrt(2)
                 increments += 1
             else:
                 break
 
-        r = nr
     return r
