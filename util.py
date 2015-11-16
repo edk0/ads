@@ -96,15 +96,6 @@ class Route:
         return '<Route points={self._points!r} volume={self.volume!r} \
 cost={self.cost!r}>'.format(self=self)
 
-    def __hash__(self):
-        return self._hash
-
-    def __eq__(self, other):
-        if isinstance(other, Route):
-            return (self.volume, self._points) == \
-                   (other.volume, other._points)
-        return NotImplemented
-
 
 def npr(n, k):
     """
