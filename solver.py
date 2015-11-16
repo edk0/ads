@@ -32,7 +32,7 @@ def available_merges(p, l, mirror=False):
     return sorted(c, key=lambda t: t[0].cost + t[1].cost - t[2].cost, reverse=True)
 
 
-def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callback=None):
+def available_with_pruning(p, l, cr=False, max_dist=float('inf'), spacing=None, progress_callback=None):
     """
     Return the merges from l that are both possible and appear to be among the
     better merges for one of their inputs.
@@ -58,7 +58,7 @@ def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callb
     sc_radius = 0
     sc_d2 = 0
     if max_dist is not None:
-        it = MergeGrid(None, l, cr, max_dist)
+        it = MergeGrid(None, l, cr, max_dist, spacing)
     else:
         if cr:
             it = combinations(l, 2)
@@ -100,7 +100,7 @@ def available_with_pruning(p, l, cr=False, max_dist=float('inf'), progress_callb
         if a is not last:
             n += 1
             last = a
-            if n & 128 == 0:
+            if n & 0xff == 0:
                 progress_callback(n)
         #  Fast distance exit
         if not radius_check(a, b):
@@ -161,6 +161,7 @@ def solve(p, max_dist=None):
     first = True
     num = 0
     increments = 0
+    initial_dist = max_dist
     while True:
         num += 1
         print('Cycle {}: finding available merges...'.format(num))
@@ -168,20 +169,14 @@ def solve(p, max_dist=None):
         # Set up d^2 cutoff
         if max_dist is not None:
             print('Using distance cutoff for this pass. Threshold: {}'.format(max_dist))
-            dc = max_dist
-        else:
-            dc = None
 
         # Print a vaguely acceptable-looking percentage
         def progress(n):
             prog = n * 100 / len(r)
             print('\033[2K\r{:6.2f}% '.format(prog), end='')
-            #if dc is not None and n > 0:
-            #    skip = (n - actual) * 100 / n
-            #    print(' (skip {:4.1f}%)'.format(skip), end='')
             sys.stdout.flush()
 
-        n, m, sc = available_with_pruning(p, r, cr=first, max_dist=dc, progress_callback=progress)
+        n, m, sc = available_with_pruning(p, r, cr=first, max_dist=max_dist, spacing=initial_dist, progress_callback=progress)
         print('\033[2K\r', end='')
 
         if any(sc):
@@ -203,7 +198,7 @@ def solve(p, max_dist=None):
             pl - len(r), n, pl, len(r), pcost, solution_cost(r)))
 
         if (pl - len(r) < 5) or increments > 0:
-            if dc is not None and increments < 6:
+            if max_dist is not None and increments < 6:
                 max_dist *= math.sqrt(2)
                 increments += 1
             else:
