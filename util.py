@@ -44,6 +44,9 @@ def merge_routes(a, b, cutoff_d2=float('inf')):
 
 
 class Point:
+    """
+    2d coordinates, possibly with a volume of stuff to be delivered there
+    """
     __slots__ = ('x', 'y', 'volume', '_hash')
 
     def __init__(self, x, y=None, *, volume=None):
@@ -70,13 +73,19 @@ class Point:
 
 
 class Route:
-    __slots__ = ('volume', '_points', 'cost', '_pre_cost', '_post_cost', '_hash')
+    """
+    A route, i.e. a sequence of points. Stores pre-computed cost and volume.
+
+    Unlike Point we don't override hash() for Route, so Routes will compare
+    equal only if they're the exact same object. This is purely a speed
+    optimization; we never create two objects for the same route, so we don't
+    need to waste the time comparing them properly.
+    """
+    __slots__ = ('volume', '_points', 'cost', '_pre_cost', '_post_cost')
 
     def __init__(self, volume, points, *, _costs=None):
         self.volume = volume
         self._points = points = tuple(points)
-
-        self._hash = hash(volume) ^ hash(points)
 
         if _costs is not None:
             self.cost, self._pre_cost, self._post_cost = _costs
