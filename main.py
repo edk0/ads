@@ -43,11 +43,13 @@ def solution_info(p, s):
 def find_cutoff(p):
     print('Analysing data')
     pd = []
-    for i in range(100):
+    for i in range(min(100, len(p.customers))):
         p1 = random.choice(p.customers)
         d = []
         for j in range(len(p.customers) // 10 + 1):
-            p2 = random.choice(p.customers)
+            p2, spare = random.sample(p.customers, 2)
+            if p2 is p1:
+                p2 = spare
             d.append(distance(p1, p2))
         pd.append(min(d))
     return median(pd)
